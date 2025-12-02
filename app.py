@@ -1,5 +1,5 @@
 import streamlit as st
-from database_utils import get_connection, get_ingredient_details
+from database_utils import get_connection, get_ingredient_details, save_scan_result, get_recent_history
 from services import SkinAnalyzer
 from chat_service import AIChatbot
 from PIL import Image
@@ -81,6 +81,18 @@ with st.sidebar:
     if is_pregnant: st.warning("⚠️ Chế độ thai kỳ: BẬT")
 
     st.markdown("---")
+    st.header("🕒 Lịch sử quét")
+    history = get_recent_history(5)
+    if history:
+        for item in history:
+            icon = "🟢" if "An toàn" in item['risk_summary'] else "🔴" if "Rủi ro" in item['risk_summary'] else "⚠️"
+            with st.expander(f"{icon} {item['scan_date'][5:16]}"):
+                st.caption(f"{item['risk_summary']}")
+                st.code(item['ingredients_detected'][:40]+"...")
+    else:
+        st.caption("Chưa có dữ liệu.")
+
+    st.markdown("---")
     st.header("⚙️ Cấu hình AI")
     
     system_api_key = st.secrets.get("GOOGLE_API_KEY", None)
@@ -100,7 +112,6 @@ with st.sidebar:
     if active_key:
         try:
             genai.configure(api_key=active_key)
-            # Auto-detect logic rút gọn
             try:
                 all_models = [m.name for m in genai.list_models()]
                 if 'models/gemini-2.5-flash' in all_models: best_model_name = 'gemini-2.5-flash'
@@ -222,6 +233,7 @@ with tab2:
                 safe_count = 0
                 risk_count = 0
                 warning_count = 0
+                risk_summary_text = "An toàn"
                 
                 for name in st.session_state.detected_ingredients:
                     found = False
@@ -229,9 +241,9 @@ with tab2:
                         if db_name in name.lower():
                             details = get_ingredient_details(db_id) 
                             if details:
-                                # Logic phân loại màu sắc đơn giản hóa
-                                safe_lv = details['safety_rating']
-                                status = "Nguy cơ" if safe_lv >= 5 else ("Cảnh báo" if safe_lv >=3 else "An toàn")
+                                # Logic đánh giá rủi ro
+                                user_risk, _ = analyzer.check_safety_for_user(db_id)
+                                status = "Nguy cơ" if user_risk == 'DANGER' else ("Cảnh báo" if user_risk == 'WARNING' else "An toàn")
                                 
                                 if status == "An toàn": safe_count += 1
                                 elif status == "Cảnh báo": warning_count += 1
@@ -248,83 +260,62 @@ with tab2:
                     if not found:
                         analysis_data.append({"Tên chất": name, "Chức năng": "Chưa rõ", "Đánh giá": "Không xác định", "Gây mụn": "-"})
 
-                # 2. HIỂN THỊ METRICS (THẺ TÓM TẮT)
+                # Xác định kết quả tổng quan để lưu
+                if risk_count > 0: risk_summary_text = "Rủi ro cao 🔴"
+                elif warning_count > 0: risk_summary_text = "Cần lưu ý ⚠️"
+                
+                # Lưu vào Lịch sử (Chỉ lưu 1 lần)
+                if 'last_saved_scan' not in st.session_state or st.session_state.last_saved_scan != st.session_state.detected_ingredients:
+                    save_scan_result(st.session_state.detected_ingredients, risk_summary_text)
+                    st.session_state.last_saved_scan = st.session_state.detected_ingredients
+
+                # 2. HIỂN THỊ METRICS
                 total = len(st.session_state.detected_ingredients)
                 known = len([d for d in analysis_data if d["Đánh giá"] != "Không xác định"])
                 
-                # Container cho Metrics
                 with st.container(border=True):
                     m1, m2, m3 = st.columns(3)
-                    m1.metric("Tổng thành phần", f"{total} chất", help="Số lượng chất tìm thấy trên nhãn")
-                    m2.metric("Đã nhận diện", f"{known}/{total}", help="Số chất có trong Database của chúng ta")
-                    
-                    # Logic đánh giá tổng quan
-                    if risk_count > 0:
-                        m3.metric("Đánh giá an toàn", "RỦI RO", f"-{risk_count} chất", delta_color="inverse")
-                    elif warning_count > 0:
-                        m3.metric("Đánh giá an toàn", "CẦN LƯU Ý", f"-{warning_count} chất", delta_color="off")
-                    else:
-                        m3.metric("Đánh giá an toàn", "TỐT", "An toàn", delta_color="normal")
+                    m1.metric("Tổng thành phần", f"{total} chất")
+                    m2.metric("Đã nhận diện", f"{known}/{total}")
+                    if risk_count > 0: m3.metric("Đánh giá", "RỦI RO", f"-{risk_count} chất", delta_color="inverse")
+                    elif warning_count > 0: m3.metric("Đánh giá", "CẦN LƯU Ý", f"-{warning_count} chất", delta_color="off")
+                    else: m3.metric("Đánh giá", "TỐT", "An toàn", delta_color="normal")
 
-                st.write("") # Spacer
+                st.write("") 
 
-                # 3. BIỂU ĐỒ TRỰC QUAN (ĐÃ ĐƠN GIẢN HÓA)
+                # 3. BIỂU ĐỒ TRỰC QUAN
                 if known > 0:
                     df = pd.DataFrame(analysis_data)
                     df_known = df[df["Đánh giá"] != "Không xác định"]
                     
                     c_chart1, c_chart2 = st.columns([1, 1])
-                    
                     with c_chart1:
                         st.caption("📊 **Tỷ lệ An toàn**")
-                        # Biểu đồ Donut (Tròn rỗng ruột) nhìn sang hơn
                         fig_safe = px.pie(df_known, names='Đánh giá', color='Đánh giá', 
                                           color_discrete_map={"An toàn":"#4CAF50", "Cảnh báo":"#FFC107", "Nguy cơ":"#F44336"},
                                           hole=0.5)
-                        fig_safe.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=220, 
-                                               legend=dict(orientation="h", y=-0.1))
+                        fig_safe.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=220, legend=dict(orientation="h", y=-0.1))
                         st.plotly_chart(fig_safe, use_container_width=True, config={'displayModeBar': False})
 
                     with c_chart2:
-                        st.caption("🧬 **Nhóm chức năng chính**")
-                        # Nhóm lại các category ít xuất hiện thành "Khác" cho gọn
+                        st.caption("🧬 **Nhóm chức năng**")
                         top_cats = df_known['Chức năng'].value_counts().nlargest(5)
                         df_cat = df_known[df_known['Chức năng'].isin(top_cats.index)]
-                        
-                        fig_cat = px.bar(df_cat, y='Chức năng', x='Tên chất', orientation='h', color='Chức năng',
-                                         color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig_cat.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=220,
-                                              xaxis=dict(showgrid=False, showticklabels=False),
-                                              yaxis=dict(title=None))
+                        fig_cat = px.bar(df_cat, y='Chức năng', x='Tên chất', orientation='h', color='Chức năng', color_discrete_sequence=px.colors.qualitative.Pastel)
+                        fig_cat.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=220, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(title=None))
                         st.plotly_chart(fig_cat, use_container_width=True, config={'displayModeBar': False})
                 
-                # 4. BẢNG CHI TIẾT (NẰM GỌN TRONG EXPANDER)
+                # 4. BẢNG CHI TIẾT
                 with st.expander("🔍 Xem chi tiết từng thành phần"):
-                    st.dataframe(
-                        pd.DataFrame(analysis_data),
-                        column_config={
-                            "Đánh giá": st.column_config.TextColumn(
-                                "Đánh giá",
-                                help="Dựa trên thang điểm EWG",
-                                width="medium",
-                            ),
-                            "Gây mụn": st.column_config.NumberColumn(
-                                "Gây mụn (0-5)",
-                                format="%d ⭐",
-                            ),
-                        },
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    st.dataframe(pd.DataFrame(analysis_data), use_container_width=True, hide_index=True)
 
                 st.divider()
                 
-                # 5. CÁ NHÂN HÓA (ROUTINE CHECK) - Gọn hơn
+                # 5. CÁ NHÂN HÓA (ROUTINE)
                 st.markdown("##### 🛡️ Đối chiếu an toàn")
                 routine_name = st.selectbox("Chọn chất đang dùng kèm:", ["(Không dùng kèm)"] + list(id_to_name.values()), key="v_s")
                 
                 if routine_name != "(Không dùng kèm)":
-                    # Logic kiểm tra (Rút gọn hiển thị)
                     id_routine = None
                     for iid, name in id_to_name.items():
                         if name == routine_name: id_routine = iid; break
@@ -346,7 +337,7 @@ with tab2:
 
                 st.divider()
                 
-                # 6. CHATBOT (GIAO DIỆN SẠCH)
+                # 6. CHATBOT
                 st.subheader("💬 Trợ lý Bác sĩ AI")
                 chat_container = st.container(height=300, border=True)
                 for msg in st.session_state.chat_history:
@@ -363,6 +354,5 @@ with tab2:
                     st.session_state.chat_history.append({"role": "assistant", "content": response})
 
             else:
-                # Màn hình chờ (Placeholder)
                 st.info("👈 Tải ảnh lên để bắt đầu phân tích.")
                 st.caption("Hỗ trợ định dạng: JPG, PNG. Dung lượng tối đa 200MB.")
