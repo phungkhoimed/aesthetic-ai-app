@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.express as px
 
 # =====================================================
-# 1. CẤU HÌNH & TRẠNG THÁI
+# 1. CẤU HÌNH & STYLE
 # =====================================================
 st.set_page_config(page_title="Aesthetic AI Pro", page_icon="✨", layout="wide")
 
@@ -21,12 +21,46 @@ if 'chat_history' not in st.session_state:
 if 'chatbot_instance' not in st.session_state:
     st.session_state.chatbot_instance = None
 
-# CSS
+# CSS TÙY CHỈNH (QUAN TRỌNG CHO GIAO DIỆN ĐẸP)
 st.markdown("""
 <style>
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { padding-top: 10px; padding-bottom: 10px; }
-    .stChatMessage { background-color: #f0f2f6; border-radius: 10px; padding: 10px; margin-bottom: 10px;}
+    /* Chỉnh font và padding */
+    .block-container { padding-top: 2rem; }
+    
+    /* Style cho các metric card */
+    div[data-testid="stMetric"] {
+        background-color: #f9f9f9;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    
+    /* Style cho Chat message */
+    .stChatMessage { 
+        background-color: #ffffff; 
+        border: 1px solid #f0f0f0;
+        border-radius: 15px; 
+        padding: 15px; 
+        margin-bottom: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    
+    /* Ẩn bớt decoration của Tab */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        white-space: pre-wrap;
+        background-color: #ffffff;
+        border-radius: 5px;
+        padding: 5px 15px;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #eef2ff;
+        color: #4f46e5;
+        border-bottom: 2px solid #4f46e5;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,8 +77,8 @@ with st.sidebar:
     user_profile = {"skin_type": skin_code, "is_pregnant": is_pregnant}
     analyzer = SkinAnalyzer(user_profile)
     
-    st.info(f"Chế độ phân tích: **{skin_code}**")
-    if is_pregnant: st.warning("⚠️ Chế độ an toàn thai kỳ: BẬT")
+    st.info(f"Đang phân tích cho da: **{skin_code}**")
+    if is_pregnant: st.warning("⚠️ Chế độ thai kỳ: BẬT")
 
     st.markdown("---")
     st.header("⚙️ Cấu hình AI")
@@ -55,9 +89,9 @@ with st.sidebar:
     best_model_name = 'gemini-1.5-flash'
 
     if system_api_key:
-        st.success("✅ Đã kích hoạt AI bản quyền")
+        st.success("✅ Đã kích hoạt AI Pro")
         active_key = system_api_key
-        with st.expander("Dùng Key riêng (Nâng cao)"):
+        with st.expander("🔑 Dùng Key cá nhân"):
             custom_key = st.text_input("Nhập Key mới:", type="password")
             if custom_key: active_key = custom_key
     else:
@@ -66,6 +100,7 @@ with st.sidebar:
     if active_key:
         try:
             genai.configure(api_key=active_key)
+            # Auto-detect logic rút gọn
             try:
                 all_models = [m.name for m in genai.list_models()]
                 if 'models/gemini-2.5-flash' in all_models: best_model_name = 'gemini-2.5-flash'
@@ -98,11 +133,11 @@ def analyze_image_with_gemini(image_file, model_name):
         model = genai.GenerativeModel(model_name)
         img = Image.open(image_file)
         prompt = """
-        Extract all chemical ingredient names from this skincare product label image.
-        Standardize names to INCI format (e.g., Vitamin B3 -> Niacinamide).
-        Return ONLY a comma-separated list. No other text.
+        Extract chemical ingredient names from skincare label.
+        Standardize to INCI format.
+        Return ONLY comma-separated list. No text.
         """
-        with st.spinner('✨ AI đang đọc bảng thành phần...'):
+        with st.spinner('✨ AI đang đọc dữ liệu...'):
             response = model.generate_content([prompt, img])
         text = response.text.strip()
         return [x.strip() for x in text.split(',')] if text else []
@@ -111,8 +146,8 @@ def analyze_image_with_gemini(image_file, model_name):
 # =====================================================
 # 4. MAIN UI
 # =====================================================
-st.title("✨ Trợ lý Da liễu AI (Pro)")
-st.markdown(f"#### *Cá nhân hóa cho làn da: {skin_type}*")
+st.title("✨ Trợ lý Da liễu AI")
+st.caption("Phân tích thành phần mỹ phẩm chuẩn y khoa & cá nhân hóa")
 st.markdown("---")
 
 ingredients_list = get_all_ingredients()
@@ -123,40 +158,46 @@ if not ingredients_list:
     st.error("⚠️ Database trống! Vui lòng chạy `data_importer_full.py`.")
     st.stop()
 
-tab1, tab2 = st.tabs(["🔍 **Tra cứu Thủ công**", "📊 **Phân tích AI Vision (Mới)**"])
+tab1, tab2 = st.tabs(["🔍 **Tra cứu Nhanh**", "📊 **Phân tích Hình ảnh (Pro)**"])
 
-# --- TAB 1 (Giữ nguyên) ---
+# --- TAB 1 (Giữ nguyên logic, tinh chỉnh UI) ---
 with tab1:
     c1, c2 = st.columns(2)
     with c1: i_a = st.selectbox("🧪 Hoạt chất 1:", list(id_to_name.keys()), format_func=lambda x:id_to_name[x], key="ma")
     with c2: i_b = st.selectbox("🧪 Hoạt chất 2:", list(id_to_name.keys()), format_func=lambda x:id_to_name[x], index=1, key="mb")
     
-    if st.button("⚡ Phân tích", use_container_width=True):
-        inter = analyzer.check_interaction(i_a, i_b)
-        risk_a, m_a = analyzer.check_safety_for_user(i_a)
-        risk_b, m_b = analyzer.check_safety_for_user(i_b)
-        
-        st.subheader("1. Kết quả Tương tác")
-        if inter:
-            t, l, a = inter
-            if t=='CONFLICT': st.error(f"❌ **XUNG ĐỘT ({l})**: {a}")
-            else: st.success(f"✅ **HỢP NHAU ({l})**: {a}")
-        else: st.info("✅ An toàn.")
-        
-        c_ra, c_rb = st.columns(2)
-        with c_ra: 
-            if risk_a == 'DANGER': st.error(m_a)
-            else: st.success(m_a)
-        with c_rb:
-            if risk_b == 'DANGER': st.error(m_b)
-            else: st.success(m_b)
+    if st.button("Kiểm tra tương tác", use_container_width=True, type="primary"):
+        with st.container(border=True):
+            st.markdown("### 📋 Kết quả phân tích")
+            inter = analyzer.check_interaction(i_a, i_b)
+            risk_a, m_a = analyzer.check_safety_for_user(i_a)
+            risk_b, m_b = analyzer.check_safety_for_user(i_b)
+            
+            if inter:
+                t, l, a = inter
+                color = "red" if t=='CONFLICT' else "green" if t=='SYNERGY' else "orange"
+                st.markdown(f":{color}[**{t} ({l}):** {a}]")
+            else: st.success("✅ Hai chất này an toàn khi dùng chung.")
+            
+            st.divider()
+            c_ra, c_rb = st.columns(2)
+            with c_ra: 
+                st.caption(f"Đánh giá: {id_to_name[i_a]}")
+                if risk_a == 'DANGER': st.error(m_a)
+                elif risk_a == 'WARNING': st.warning(m_a)
+                else: st.success(m_a)
+            with c_rb:
+                st.caption(f"Đánh giá: {id_to_name[i_b]}")
+                if risk_b == 'DANGER': st.error(m_b)
+                elif risk_b == 'WARNING': st.warning(m_b)
+                else: st.success(m_b)
 
-# --- TAB 2: DASHBOARD TRỰC QUAN HÓA ---
+# --- TAB 2: VISION PRO (GIAO DIỆN MỚI) ---
 with tab2:
     if not is_ai_ready:
         st.warning("🔒 Vui lòng nhập Key.")
     else:
-        col_img, col_res = st.columns([1, 2], gap="medium")
+        col_img, col_res = st.columns([1, 2.5], gap="large")
         
         with col_img:
             uploaded_file = st.file_uploader("", type=['jpg', 'png', 'jpeg'], label_visibility="collapsed")
@@ -170,115 +211,158 @@ with tab2:
                         if st.session_state.chatbot_instance:
                             profile_str = f"Da {skin_type}, Bầu: {is_pregnant}"
                             st.session_state.chatbot_instance.start_new_session(detected, profile_str)
-                            st.session_state.chat_history = [{"role": "assistant", "content": "Tôi đã phân tích xong dữ liệu. Bạn cần xem biểu đồ hay hỏi gì thêm?"}]
+                            st.session_state.chat_history = [{"role": "assistant", "content": f"Tôi đã phân tích xong **{len(detected)}** thành phần. Dưới đây là báo cáo chi tiết cho bạn."}]
                     else:
                         st.error("Không đọc được chữ.")
 
         with col_res:
             if st.session_state.scan_done:
-                # --- PHẦN PHÂN TÍCH DỮ LIỆU (NEW) ---
-                
-                # 1. Thu thập dữ liệu chi tiết từ DB
+                # 1. XỬ LÝ DỮ LIỆU
                 analysis_data = []
-                unknown_count = 0
+                safe_count = 0
+                risk_count = 0
+                warning_count = 0
                 
                 for name in st.session_state.detected_ingredients:
                     found = False
                     for db_name, db_id in name_to_id.items():
                         if db_name in name.lower():
-                            # Lấy chi tiết từ hàm trong database_utils
                             details = get_ingredient_details(db_id) 
                             if details:
+                                # Logic phân loại màu sắc đơn giản hóa
+                                safe_lv = details['safety_rating']
+                                status = "Nguy cơ" if safe_lv >= 5 else ("Cảnh báo" if safe_lv >=3 else "An toàn")
+                                
+                                if status == "An toàn": safe_count += 1
+                                elif status == "Cảnh báo": warning_count += 1
+                                else: risk_count += 1
+                                
                                 analysis_data.append({
-                                    "Name": details['inci_name'],
-                                    "Category": details['function_category'],
-                                    "Safety": "Nguy cơ cao" if details['safety_rating'] >= 5 else ("Trung bình" if details['safety_rating'] >=3 else "An toàn"),
-                                    "Comedogenic": details['comedogenic_rating']
+                                    "Tên chất": details['inci_name'],
+                                    "Chức năng": details['function_category'],
+                                    "Đánh giá": status,
+                                    "Gây mụn": details['comedogenic_rating']
                                 })
                                 found = True
                             break
                     if not found:
-                        unknown_count += 1
+                        analysis_data.append({"Tên chất": name, "Chức năng": "Chưa rõ", "Đánh giá": "Không xác định", "Gây mụn": "-"})
 
-                # 2. Hiển thị Dashboard
-                if analysis_data:
+                # 2. HIỂN THỊ METRICS (THẺ TÓM TẮT)
+                total = len(st.session_state.detected_ingredients)
+                known = len([d for d in analysis_data if d["Đánh giá"] != "Không xác định"])
+                
+                # Container cho Metrics
+                with st.container(border=True):
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Tổng thành phần", f"{total} chất", help="Số lượng chất tìm thấy trên nhãn")
+                    m2.metric("Đã nhận diện", f"{known}/{total}", help="Số chất có trong Database của chúng ta")
+                    
+                    # Logic đánh giá tổng quan
+                    if risk_count > 0:
+                        m3.metric("Đánh giá an toàn", "RỦI RO", f"-{risk_count} chất", delta_color="inverse")
+                    elif warning_count > 0:
+                        m3.metric("Đánh giá an toàn", "CẦN LƯU Ý", f"-{warning_count} chất", delta_color="off")
+                    else:
+                        m3.metric("Đánh giá an toàn", "TỐT", "An toàn", delta_color="normal")
+
+                st.write("") # Spacer
+
+                # 3. BIỂU ĐỒ TRỰC QUAN (ĐÃ ĐƠN GIẢN HÓA)
+                if known > 0:
                     df = pd.DataFrame(analysis_data)
+                    df_known = df[df["Đánh giá"] != "Không xác định"]
                     
-                    st.success(f"✅ Đã nhận diện {len(df)}/{len(st.session_state.detected_ingredients)} thành phần trong Database.")
+                    c_chart1, c_chart2 = st.columns([1, 1])
                     
-                    # BIỂU ĐỒ 1: MỨC ĐỘ AN TOÀN (PIE CHART)
-                    c_chart1, c_chart2 = st.columns(2)
                     with c_chart1:
-                        st.caption("📊 Mức độ an toàn")
-                        fig_safe = px.pie(df, names='Safety', color='Safety', 
-                                          color_discrete_map={"An toàn":"#00CC96", "Trung bình":"#FFA15A", "Nguy cơ cao":"#EF553B"},
-                                          hole=0.4)
-                        fig_safe.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=200)
-                        st.plotly_chart(fig_safe, use_container_width=True)
+                        st.caption("📊 **Tỷ lệ An toàn**")
+                        # Biểu đồ Donut (Tròn rỗng ruột) nhìn sang hơn
+                        fig_safe = px.pie(df_known, names='Đánh giá', color='Đánh giá', 
+                                          color_discrete_map={"An toàn":"#4CAF50", "Cảnh báo":"#FFC107", "Nguy cơ":"#F44336"},
+                                          hole=0.5)
+                        fig_safe.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=220, 
+                                               legend=dict(orientation="h", y=-0.1))
+                        st.plotly_chart(fig_safe, use_container_width=True, config={'displayModeBar': False})
 
-                    # BIỂU ĐỒ 2: PHÂN BỐ CHỨC NĂNG (BAR CHART)
                     with c_chart2:
-                        st.caption("🧬 Nhóm chức năng")
-                        fig_cat = px.bar(df, y='Category', x='Name', orientation='h', color='Category')
-                        fig_cat.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=200, xaxis_title=None, yaxis_title=None)
-                        st.plotly_chart(fig_cat, use_container_width=True)
-                    
-                    # BẢNG CHI TIẾT
-                    with st.expander("Xem bảng chi tiết từng chất"):
-                        st.dataframe(df[['Name', 'Category', 'Safety', 'Comedogenic']], use_container_width=True)
-
-                else:
-                    st.warning("⚠️ Chưa có dữ liệu khớp trong Database để vẽ biểu đồ.")
+                        st.caption("🧬 **Nhóm chức năng chính**")
+                        # Nhóm lại các category ít xuất hiện thành "Khác" cho gọn
+                        top_cats = df_known['Chức năng'].value_counts().nlargest(5)
+                        df_cat = df_known[df_known['Chức năng'].isin(top_cats.index)]
+                        
+                        fig_cat = px.bar(df_cat, y='Chức năng', x='Tên chất', orientation='h', color='Chức năng',
+                                         color_discrete_sequence=px.colors.qualitative.Pastel)
+                        fig_cat.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=220,
+                                              xaxis=dict(showgrid=False, showticklabels=False),
+                                              yaxis=dict(title=None))
+                        st.plotly_chart(fig_cat, use_container_width=True, config={'displayModeBar': False})
+                
+                # 4. BẢNG CHI TIẾT (NẰM GỌN TRONG EXPANDER)
+                with st.expander("🔍 Xem chi tiết từng thành phần"):
+                    st.dataframe(
+                        pd.DataFrame(analysis_data),
+                        column_config={
+                            "Đánh giá": st.column_config.TextColumn(
+                                "Đánh giá",
+                                help="Dựa trên thang điểm EWG",
+                                width="medium",
+                            ),
+                            "Gây mụn": st.column_config.NumberColumn(
+                                "Gây mụn (0-5)",
+                                format="%d ⭐",
+                            ),
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                 st.divider()
                 
-                # --- PHẦN LOGIC CÁ NHÂN HÓA (GIỮ NGUYÊN) ---
-                routine_name = st.selectbox("Đối chiếu với Routine:", ["(Chọn chất)"] + list(id_to_name.values()), key="v_s")
-                if routine_name != "(Chọn chất)":
-                    matched_count = 0
-                    personal_risks = []
-                    interaction_risks = []
+                # 5. CÁ NHÂN HÓA (ROUTINE CHECK) - Gọn hơn
+                st.markdown("##### 🛡️ Đối chiếu an toàn")
+                routine_name = st.selectbox("Chọn chất đang dùng kèm:", ["(Không dùng kèm)"] + list(id_to_name.values()), key="v_s")
+                
+                if routine_name != "(Không dùng kèm)":
+                    # Logic kiểm tra (Rút gọn hiển thị)
                     id_routine = None
                     for iid, name in id_to_name.items():
                         if name == routine_name: id_routine = iid; break
                     
-                    for row in analysis_data: # Dùng data đã xử lý cho nhanh
-                        matched_count += 1
-                        # Tìm lại ID
-                        db_id = name_to_id.get(row['Name'].lower())
-                        if db_id:
-                            p_risk, p_msg = analyzer.check_safety_for_user(db_id)
-                            if p_risk in ['DANGER', 'WARNING']:
-                                personal_risks.append((row['Name'], p_risk, p_msg))
-                            if id_routine and db_id != id_routine:
+                    found_issue = False
+                    for row in analysis_data:
+                        if row['Đánh giá'] != "Không xác định":
+                            db_id = name_to_id.get(row['Tên chất'].lower())
+                            if db_id and id_routine and db_id != id_routine:
                                 inter = analyzer.check_interaction(db_id, id_routine)
                                 if inter:
                                     t, l, a = inter
-                                    if t == 'CONFLICT': interaction_risks.append((f"❌ **XUNG ĐỘT**: {row['Name']} kỵ {routine_name}", a))
+                                    found_issue = True
+                                    if t == 'CONFLICT': st.error(f"❌ **{row['Tên chất']}** kỵ **{routine_name}**\n\n_{a}_")
+                                    elif t == 'CAUTION': st.warning(f"⚠️ **{row['Tên chất']}** cần thận trọng với **{routine_name}**\n\n_{a}_")
                     
-                    if personal_risks:
-                        st.error(f"🚫 **RỦI RO CHO DA {skin_code.upper()}:**")
-                        for name, risk, msg in personal_risks:
-                            st.write(f"- **{name}**: {msg}")
-                    
-                    if not personal_risks and not interaction_risks:
-                        st.success(f"🎉 **AN TOÀN TUYỆT ĐỐI!**")
+                    if not found_issue:
+                        st.success(f"✅ Không tìm thấy xung đột với **{routine_name}**.")
 
                 st.divider()
-                # --- PHẦN CHAT (GIỮ NGUYÊN) ---
-                st.subheader("💬 Hỏi đáp chuyên sâu")
-                chat_container = st.container(height=300)
+                
+                # 6. CHATBOT (GIAO DIỆN SẠCH)
+                st.subheader("💬 Trợ lý Bác sĩ AI")
+                chat_container = st.container(height=300, border=True)
                 for msg in st.session_state.chat_history:
                     with chat_container.chat_message(msg["role"]):
                         st.markdown(msg["content"])
-                if prompt := st.chat_input("Hỏi gì đó..."):
+                
+                if prompt := st.chat_input("Hỏi chi tiết về sản phẩm này..."):
                     st.session_state.chat_history.append({"role": "user", "content": prompt})
                     with chat_container.chat_message("user"): st.markdown(prompt)
                     with chat_container.chat_message("assistant"):
-                        with st.spinner("..."):
+                        with st.spinner("Thinking..."):
                             response = st.session_state.chatbot_instance.send_message(prompt)
                             st.markdown(response)
                     st.session_state.chat_history.append({"role": "assistant", "content": response})
 
             else:
-                st.info("👈 Tải ảnh lên để bắt đầu.")
+                # Màn hình chờ (Placeholder)
+                st.info("👈 Tải ảnh lên để bắt đầu phân tích.")
+                st.caption("Hỗ trợ định dạng: JPG, PNG. Dung lượng tối đa 200MB.")
